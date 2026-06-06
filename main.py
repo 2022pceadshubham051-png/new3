@@ -67,6 +67,12 @@ ydl_opts = {
     'outtmpl': 'downloads/%(id)s.%(ext)s',
     'noplaylist': True,
     'quiet': True,
+    # Use web_creator client to bypass YouTube bot-detection without needing cookies
+    'extractor_args': {
+        'youtube': {
+            'player_client': ['web_creator', 'default'],
+        }
+    },
 }
 if YTDL_COOKIEFILE:
     cookie_path = os.path.abspath(YTDL_COOKIEFILE)
@@ -1390,10 +1396,12 @@ async def main():
     await user.start()
     
     # Cache user's dialogs to prevent "Peer id invalid" updates errors
+    # We fetch all dialogs (no limit) so every group/channel the user is in gets resolved
     try:
-        async for dialog in user.get_dialogs(limit=100):
-            pass
-        print("User account dialogs cached successfully.")
+        dialog_count = 0
+        async for dialog in user.get_dialogs():
+            dialog_count += 1
+        print(f"User account dialogs cached successfully ({dialog_count} dialogs).")
     except Exception as e:
         logging.warning(f"Failed to cache user dialogs: {e}")
     
