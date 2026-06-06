@@ -67,6 +67,7 @@ ydl_opts = {
     'outtmpl': 'downloads/%(id)s.%(ext)s',
     'noplaylist': True,
     'quiet': True,
+    'js_runtimes': ['node'],
 }
 if YTDL_COOKIEFILE:
     cookie_path = os.path.abspath(YTDL_COOKIEFILE)
