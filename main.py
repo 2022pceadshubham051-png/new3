@@ -72,6 +72,11 @@ if YTDL_COOKIEFILE:
     cookie_path = os.path.abspath(YTDL_COOKIEFILE)
     if os.path.isfile(cookie_path):
         ydl_opts['cookiefile'] = cookie_path
+        logging.info(f"Loaded yt-dlp cookies file: {cookie_path}")
+    else:
+        logging.warning(f"YTDL_COOKIEFILE set to '{YTDL_COOKIEFILE}' but file was NOT found at: {cookie_path}")
+else:
+    logging.info("No yt-dlp cookies file configured (YTDL_COOKIEFILE is empty)")
 
 START_TIME = time.time()
 
