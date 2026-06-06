@@ -14,8 +14,14 @@ import logging
 from pathlib import Path
 from pyrogram import Client, filters, idle
 from pyrogram.types import Message, BotCommand, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pyrogram.enums import ChatMembersFilter
+from pyrogram.enums import ChatMembersFilter, ParseMode
 import pyrogram.errors
+try:
+    from pyrogram.errors import GroupcallForbidden
+except ImportError:
+    class GroupcallForbidden(pyrogram.errors.exceptions.forbidden_403.Forbidden):
+        pass
+    pyrogram.errors.GroupcallForbidden = GroupcallForbidden
 from yt_dlp import YoutubeDL
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -78,8 +84,10 @@ async def is_user_admin(chat_id: int, user_id: int) -> bool:
     if cached_admins is not None:
         return user_id in cached_admins
     try:
-        admins = await bot.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS)
-        admin_ids = [a.user.id for a in admins]
+        admin_ids = []
+        async for member in bot.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS):
+            if member.user:
+                admin_ids.append(member.user.id)
         database.set_cached_admins(chat_id, admin_ids)
         return user_id in admin_ids
     except Exception as e:
@@ -194,7 +202,7 @@ async def active_chat_monitor(chat_id):
                         "<b>[MusicVerse Notification]</b>\n\n"
                         "⚠️ <i>The voice chat is empty. To conserve server resources, "
                         "MusicVerse has stopped playback and left the call.</i>",
-                        parse_mode="html"
+                        parse_mode=ParseMode.HTML
                     )
                     break
             else:
@@ -427,9 +435,9 @@ async def start_command(client: Client, message: Message):
         
         photo_path = "assets/start.png"
         if os.path.exists(photo_path):
-            await message.reply_photo(photo=photo_path, caption=caption, reply_markup=markup, parse_mode="html")
+            await message.reply_photo(photo=photo_path, caption=caption, reply_markup=markup, parse_mode=ParseMode.HTML)
         else:
-            await message.reply_text(text=caption, reply_markup=markup, parse_mode="html")
+            await message.reply_text(text=caption, reply_markup=markup, parse_mode=ParseMode.HTML)
             
         # Log to support group if new user
         if is_new_user and SUPPORT_GROUP_ID:
@@ -440,7 +448,7 @@ async def start_command(client: Client, message: Message):
                     f"🆔 <b>User ID:</b> <code>{user_id}</code>\n"
                     f"🔗 <b>Username:</b> @{username if username else 'N/A'}"
                 )
-                await bot.send_message(SUPPORT_GROUP_ID, log_msg, parse_mode="html")
+                await bot.send_message(SUPPORT_GROUP_ID, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logging.error(f"Failed to log new user: {e}")
     else:
@@ -450,7 +458,7 @@ async def start_command(client: Client, message: Message):
             "🎵 <b>MusicVerse online</b> inside this community!\n"
             "Use <code>/play [song name]</code> to start playing music in the voice chat.\n"
             "Type <code>/help</code> for details.",
-            parse_mode="html"
+            parse_mode=ParseMode.HTML
         )
 
 @bot.on_message(filters.command("help"))
@@ -486,9 +494,9 @@ async def help_command(client: Client, message: Message):
     
     photo_path = "assets/help.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=caption, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=caption, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=caption, parse_mode="html")
+        await message.reply_text(text=caption, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("play") & filters.group)
 async def play_command(client: Client, message: Message):
@@ -514,7 +522,7 @@ async def play_command(client: Client, message: Message):
         if duration > 3600:
             return await message.reply_text("❌ <b>Playback Rejected:</b> The audio file duration exceeds the maximum limit of <b>1 hour (3600 seconds)</b>.")
             
-        processing_msg = await message.reply_text("📥 <b>Downloading audio file...</b>", parse_mode="html")
+        processing_msg = await message.reply_text("📥 <b>Downloading audio file...</b>", parse_mode=ParseMode.HTML)
         try:
             file_path = await client.download_media(reply)
             file_path = os.path.abspath(file_path)
@@ -542,11 +550,11 @@ async def play_command(client: Client, message: Message):
                     caption=f"📝 <b>Added to Queue:</b>\n"
                             f"🎼 <b>Title:</b> {title}\n"
                             f"👤 <b>Requested by:</b> <a href='tg://user?id={user_id}'>{first_name}</a>",
-                    parse_mode="html"
+                    parse_mode=ParseMode.HTML
                 )
                 await processing_msg.delete()
             else:
-                await processing_msg.edit_text("🎵 <b>Connecting to Video Chat...</b>", parse_mode="html")
+                await processing_msg.edit_text("🎵 <b>Connecting to Video Chat...</b>", parse_mode=ParseMode.HTML)
                 await call_py.play(chat_id, MediaStream(file_path, video_flags=MediaStream.Flags.IGNORE))
                 track_listen_start(chat_id, user_id, username, first_name, title, file_path, duration)
                 
@@ -560,17 +568,17 @@ async def play_command(client: Client, message: Message):
                             f"🎼 <b>Title:</b> {title}\n"
                             f"👤 <b>Requested by:</b> <a href='tg://user?id={user_id}'>{first_name}</a>",
                     reply_markup=get_control_markup(),
-                    parse_mode="html"
+                    parse_mode=ParseMode.HTML
                 )
                 await processing_msg.delete()
         except Exception as e:
-            await processing_msg.edit_text(f"❌ <b>Error:</b> {str(e)}", parse_mode="html")
+            await processing_msg.edit_text(f"❌ <b>Error:</b> {str(e)}", parse_mode=ParseMode.HTML)
         return
 
     if not query:
         return await message.reply_text("💡 <b>Usage:</b> <code>/play [song name/youtube url/reply to audio]</code>")
         
-    processing_msg = await message.reply_text("🔎 <b>Searching & preparing stream...</b>", parse_mode="html")
+    processing_msg = await message.reply_text("🔎 <b>Searching & preparing stream...</b>", parse_mode=ParseMode.HTML)
     
     try:
         def extract_info():
@@ -618,11 +626,11 @@ async def play_command(client: Client, message: Message):
                 caption=f"📝 <b>Added to Queue:</b>\n"
                         f"🎼 <b>Title:</b> {title}\n"
                         f"👤 <b>Requested by:</b> <a href='tg://user?id={user_id}'>{first_name}</a>",
-                parse_mode="html"
+                parse_mode=ParseMode.HTML
             )
             await processing_msg.delete()
         else:
-            await processing_msg.edit_text("🎵 <b>Connecting to Video Chat...</b>", parse_mode="html")
+            await processing_msg.edit_text("🎵 <b>Connecting to Video Chat...</b>", parse_mode=ParseMode.HTML)
             await call_py.play(chat_id, MediaStream(filepath, video_flags=MediaStream.Flags.IGNORE))
             track_listen_start(chat_id, user_id, username, first_name, title, filepath, duration)
             
@@ -636,7 +644,7 @@ async def play_command(client: Client, message: Message):
                         f"🎼 <b>Title:</b> {title}\n"
                         f"👤 <b>Requested by:</b> <a href='tg://user?id={user_id}'>{first_name}</a>",
                 reply_markup=get_control_markup(),
-                parse_mode="html"
+                parse_mode=ParseMode.HTML
             )
             await processing_msg.delete()
 
@@ -647,7 +655,7 @@ async def play_command(client: Client, message: Message):
                 "\n\n⚠️ <b>System Note:</b> YouTube requires cookies. "
                 "Specify a cookies.txt file inside config.py to bypass."
             )
-        await processing_msg.edit_text(f"❌ <b>Search/Download Error:</b> {error_text}", parse_mode="html")
+        await processing_msg.edit_text(f"❌ <b>Search/Download Error:</b> {error_text}", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("forceplay") & filters.group)
 async def forceplay_command(client: Client, message: Message):
@@ -664,7 +672,7 @@ async def forceplay_command(client: Client, message: Message):
         return await message.reply_text("💡 <b>Usage:</b> <code>/forceplay [song name/youtube url]</code>")
 
     query = " ".join(message.command[1:])
-    processing_msg = await message.reply_text("⚡ <b>Preparing immediate playback...</b>", parse_mode="html")
+    processing_msg = await message.reply_text("⚡ <b>Preparing immediate playback...</b>", parse_mode=ParseMode.HTML)
 
     try:
         def extract_info():
@@ -705,12 +713,12 @@ async def forceplay_command(client: Client, message: Message):
                     f"🎼 <b>Title:</b> {title}\n"
                     f"👤 <b>Initiated by Admin:</b> <a href='tg://user?id={user_id}'>{first_name}</a>",
             reply_markup=get_control_markup(),
-            parse_mode="html"
+            parse_mode=ParseMode.HTML
         )
         await processing_msg.delete()
 
     except Exception as e:
-        await processing_msg.edit_text(f"❌ <b>Force Play Error:</b> {str(e)}", parse_mode="html")
+        await processing_msg.edit_text(f"❌ <b>Force Play Error:</b> {str(e)}", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("pause") & filters.group)
 async def pause_command(client: Client, message: Message):
@@ -727,7 +735,7 @@ async def pause_command(client: Client, message: Message):
 
     track_listen_pause(chat_id)
     await call_py.pause_stream(chat_id)
-    await message.reply_text("⏸️ <b>Stream paused successfully.</b>", parse_mode="html")
+    await message.reply_text("⏸️ <b>Stream paused successfully.</b>", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("resume") & filters.group)
 async def resume_command(client: Client, message: Message):
@@ -744,7 +752,7 @@ async def resume_command(client: Client, message: Message):
 
     track_listen_resume(chat_id)
     await call_py.resume_stream(chat_id)
-    await message.reply_text("▶️ <b>Playback resumed successfully.</b>", parse_mode="html")
+    await message.reply_text("▶️ <b>Playback resumed successfully.</b>", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("skip") & filters.group)
 async def skip_command(client: Client, message: Message):
@@ -756,7 +764,7 @@ async def skip_command(client: Client, message: Message):
     if chat_id not in PLAYING or not PLAYING[chat_id]:
         return await message.reply_text("❌ <b>Error:</b> Nothing is streaming to skip.")
 
-    await message.reply_text("⏭️ <b>Current song skipped by administrator.</b>", parse_mode="html")
+    await message.reply_text("⏭️ <b>Current song skipped by administrator.</b>", parse_mode=ParseMode.HTML)
     # Reset loop status for this slot so skip actually plays next
     LOOP[chat_id] = 0
     await play_next(chat_id)
@@ -773,9 +781,9 @@ async def end_command(client: Client, message: Message):
     caption = "⏹️ <b>Music playback ended</b> and queue cleared successfully."
     photo_path = "assets/end.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=caption, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=caption, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=caption, parse_mode="html")
+        await message.reply_text(text=caption, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("queue") & filters.group)
 async def queue_command(client: Client, message: Message):
@@ -802,9 +810,9 @@ async def queue_command(client: Client, message: Message):
             
     photo_path = "assets/queue.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=text, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=text, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=text, parse_mode="html")
+        await message.reply_text(text=text, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("loop") & filters.group)
 async def loop_command(client: Client, message: Message):
@@ -816,7 +824,7 @@ async def loop_command(client: Client, message: Message):
     if len(message.command) < 2:
         curr = LOOP.get(chat_id, 0)
         status = "Infinite Loop" if curr == -1 else f"{curr} times" if curr > 0 else "Disabled"
-        return await message.reply_text(f"🔄 <b>Loop Status:</b> <code>{status}</code>\n💡 <i>Use:</i> <code>/loop [enable/disable/number]</code>", parse_mode="html")
+        return await message.reply_text(f"🔄 <b>Loop Status:</b> <code>{status}</code>\n💡 <i>Use:</i> <code>/loop [enable/disable/number]</code>", parse_mode=ParseMode.HTML)
 
     arg = message.command[1].lower()
     if arg == "enable":
@@ -838,9 +846,9 @@ async def loop_command(client: Client, message: Message):
 
     photo_path = "assets/loop.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=status_text, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=status_text, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=status_text, parse_mode="html")
+        await message.reply_text(text=status_text, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("seek") & filters.group)
 async def seek_command(client: Client, message: Message):
@@ -946,9 +954,9 @@ async def auth_command(client: Client, message: Message):
     caption = f"🛡️ <b>User Authorized!</b>\n\n👤 <b>Name:</b> {t_name}\n🆔 <b>User ID:</b> <code>{t_id}</code>\n\n<i>Authorized users can pause, resume, skip, loop, and queue music.</i>"
     photo_path = "assets/auth.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=caption, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=caption, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=caption, parse_mode="html")
+        await message.reply_text(text=caption, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("unauth") & filters.group)
 async def unauth_command(client: Client, message: Message):
@@ -962,7 +970,7 @@ async def unauth_command(client: Client, message: Message):
         return await message.reply_text("💡 <b>Usage:</b> Reply to a message, or use user ID or username: <code>/unauth @username</code>")
 
     database.remove_auth_user(chat_id, t_id)
-    await message.reply_text(f"🛡️ <b>User Unauthorized:</b> {t_name} (<code>{t_id}</code>) has been removed from authorized users.", parse_mode="html")
+    await message.reply_text(f"🛡️ <b>User Unauthorized:</b> {t_name} (<code>{t_id}</code>) has been removed from authorized users.", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("reload") & filters.group)
 async def reload_command(client: Client, message: Message):
@@ -977,9 +985,9 @@ async def reload_command(client: Client, message: Message):
         admins = await bot.get_chat_members(chat_id, filter=ChatMembersFilter.ADMINISTRATORS)
         admin_ids = [a.user.id for a in admins]
         database.set_cached_admins(chat_id, admin_ids)
-        await message.reply_text("🔄 <b>Admin cache reloaded successfully!</b> Cached list updated.", parse_mode="html")
+        await message.reply_text("🔄 <b>Admin cache reloaded successfully!</b> Cached list updated.", parse_mode=ParseMode.HTML)
     except Exception as e:
-        await message.reply_text(f"❌ <b>Cache Reload Failed:</b> {str(e)}", parse_mode="html")
+        await message.reply_text(f"❌ <b>Cache Reload Failed:</b> {str(e)}", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("approvemember") & filters.user(OWNER_ID))
 async def approvemember_command(client: Client, message: Message):
@@ -988,7 +996,7 @@ async def approvemember_command(client: Client, message: Message):
         return await message.reply_text("💡 <b>Usage:</b> <code>/approvemember [reply/userid/username]</code> (Owner only)")
 
     database.add_approved_member(t_id, t_username)
-    await message.reply_text(f"🌟 <b>Member Approved:</b> {t_name} (<code>{t_id}</code>) has been granted global bot administrator privileges.", parse_mode="html")
+    await message.reply_text(f"🌟 <b>Member Approved:</b> {t_name} (<code>{t_id}</code>) has been granted global bot administrator privileges.", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("unapprovemember") & filters.user(OWNER_ID))
 async def unapprovemember_command(client: Client, message: Message):
@@ -997,7 +1005,7 @@ async def unapprovemember_command(client: Client, message: Message):
         return await message.reply_text("💡 <b>Usage:</b> <code>/unapprovemember [reply/userid/username]</code> (Owner only)")
 
     database.remove_approved_member(t_id)
-    await message.reply_text(f"🌟 <b>Member Unapproved:</b> {t_name} (<code>{t_id}</code>) has been removed from global bot administrators.", parse_mode="html")
+    await message.reply_text(f"🌟 <b>Member Unapproved:</b> {t_name} (<code>{t_id}</code>) has been removed from global bot administrators.", parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("broadcast"))
 async def broadcast_command(client: Client, message: Message):
@@ -1009,7 +1017,7 @@ async def broadcast_command(client: Client, message: Message):
     if not message.reply_to_message and len(message.command) < 2:
         return await message.reply_text("💡 <b>Usage:</b> Reply to a message or provide text: <code>/broadcast [text]</code>")
 
-    processing_msg = await message.reply_text("⏳ <b>Broadcasting message to all chats...</b>", parse_mode="html")
+    processing_msg = await message.reply_text("⏳ <b>Broadcasting message to all chats...</b>", parse_mode=ParseMode.HTML)
     
     chats = database.get_tracked_chats()
     success = 0
@@ -1031,7 +1039,7 @@ async def broadcast_command(client: Client, message: Message):
         f"✅ <b>Broadcast Completed!</b>\n\n"
         f"🎯 <b>Success:</b> <code>{success}</code>\n"
         f"❌ <b>Failed:</b> <code>{failed}</code>",
-        parse_mode="html"
+        parse_mode=ParseMode.HTML
     )
 
 @bot.on_message(filters.command("botstats"))
@@ -1065,7 +1073,7 @@ async def botstats_command(client: Client, message: Message):
         f"👤 <b>Registered Database Users:</b> <code>{users_count}</code>\n"
         f"💿 <b>Total Songs Streamed:</b> <code>{song_plays}</code>"
     )
-    await message.reply_text(stats, parse_mode="html")
+    await message.reply_text(stats, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("mysongs"))
 async def mysongs_command(client: Client, message: Message):
@@ -1077,13 +1085,13 @@ async def mysongs_command(client: Client, message: Message):
     
     songs = database.get_top_songs(user_id, limit=10)
     if not songs:
-        return await message.reply_text("💿 <b>You haven't streamed any songs yet!</b> Start playing to view metrics.", parse_mode="html")
+        return await message.reply_text("💿 <b>You haven't streamed any songs yet!</b> Start playing to view metrics.", parse_mode=ParseMode.HTML)
         
     text = f"🏆 <b>Top 10 Most Played Songs by {first_name}</b>\n\n"
     for idx, song in enumerate(songs, start=1):
         text += f"{idx}. 🎼 <b>{song['song_title']}</b> — Played <code>{song['play_count']}</code> times\n"
         
-    await message.reply_text(text, parse_mode="html")
+    await message.reply_text(text, parse_mode=ParseMode.HTML)
 
 @bot.on_message(filters.command("profile"))
 async def profile_command(client: Client, message: Message):
@@ -1094,7 +1102,7 @@ async def profile_command(client: Client, message: Message):
     # Save user info to database
     database.ensure_user(user_id, username, first_name)
     
-    processing_msg = await message.reply_text("🎨 <b>Generating player card, please wait...</b>", parse_mode="html")
+    processing_msg = await message.reply_text("🎨 <b>Generating player card, please wait...</b>", parse_mode=ParseMode.HTML)
     
     # Fetch database stats
     profile = database.get_user_profile(user_id)
@@ -1141,11 +1149,11 @@ async def profile_command(client: Client, message: Message):
             f"⏱️ <b>Time Listened:</b> <code>{profile['total_listen_seconds'] / 3600:.2f} Hours</code>\n"
             f"💿 <b>Most Played Song:</b> <i>{profile['favorite_song']}</i> (<b>{profile['favorite_plays']} plays</b>)"
         )
-        await message.reply_photo(photo=output_path, caption=caption, parse_mode="html")
+        await message.reply_photo(photo=output_path, caption=caption, parse_mode=ParseMode.HTML)
         await processing_msg.delete()
         
     except Exception as e:
-        await processing_msg.edit_text(f"❌ <b>Card Generation Failed:</b> {str(e)}", parse_mode="html")
+        await processing_msg.edit_text(f"❌ <b>Card Generation Failed:</b> {str(e)}", parse_mode=ParseMode.HTML)
         
     # Clean up files
     try:
@@ -1161,9 +1169,9 @@ async def restart_command(client: Client, message: Message):
     caption = "🔄 <b>Rebooting MusicVerse System...</b>"
     photo_path = "assets/restart.png"
     if os.path.exists(photo_path):
-        await message.reply_photo(photo=photo_path, caption=caption, parse_mode="html")
+        await message.reply_photo(photo=photo_path, caption=caption, parse_mode=ParseMode.HTML)
     else:
-        await message.reply_text(text=caption, parse_mode="html")
+        await message.reply_text(text=caption, parse_mode=ParseMode.HTML)
         
     # Clean shutdown and execv restart
     logging.info("Restart command received. rebooting...")
@@ -1210,7 +1218,7 @@ async def chat_member_updated_handler(client: Client, update):
                     f"🆔 <b>Group ID:</b> <code>{chat_id}</code>\n"
                     f"👤 <b>Added by:</b> {added_by_name} (<code>{added_by_id}</code>)"
                 )
-                await bot.send_message(SUPPORT_GROUP_ID, log_msg, parse_mode="html")
+                await bot.send_message(SUPPORT_GROUP_ID, log_msg, parse_mode=ParseMode.HTML)
             except Exception as e:
                 logging.error(f"Failed to log group addition: {e}")
 
@@ -1232,7 +1240,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
         )
         return await query.edit_message_caption(caption=help_text, reply_markup=InlineKeyboardMarkup([
             [InlineKeyboardButton("🔙 Back to Start", callback_data="start_callback")]
-        ]), parse_mode="html")
+        ]), parse_mode=ParseMode.HTML)
         
     if query.data == "start_callback":
         caption = (
@@ -1255,7 +1263,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
                 InlineKeyboardButton("📚 Help Guide", callback_data="help_callback")
             ]
         ])
-        return await query.edit_message_caption(caption=caption, reply_markup=markup, parse_mode="html")
+        return await query.edit_message_caption(caption=caption, reply_markup=markup, parse_mode=ParseMode.HTML)
 
     # Group playback control buttons
     if not await is_user_authorized(chat_id, user_id):
@@ -1293,7 +1301,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
     elif data == "end":
         await stop_playback(chat_id)
         await query.answer("Playback Ended ⏹️")
-        await query.message.reply_text("⏹️ <b>Music playback ended</b> and queue cleared by user request.", parse_mode="html")
+        await query.message.reply_text("⏹️ <b>Music playback ended</b> and queue cleared by user request.", parse_mode=ParseMode.HTML)
         
     elif data == "loop_toggle":
         curr = LOOP.get(chat_id, 0)
@@ -1320,7 +1328,7 @@ async def callback_handler(client: Client, query: CallbackQuery):
             if len(chat_queue) > 10:
                 text += f"\n<i>...and {len(chat_queue) - 10} more.</i>"
         
-        await bot.send_message(chat_id, text, parse_mode="html")
+        await bot.send_message(chat_id, text, parse_mode=ParseMode.HTML)
         await query.answer("Queue retrieved.")
 
 # --- Startup & Main Execution ---
@@ -1333,13 +1341,6 @@ async def main():
     try:
         from pytgcalls import PyTgCalls
         from pytgcalls.types import Update, StreamEnded
-        
-        # Define stream ended callback inside main
-        @PyTgCalls.on_update()
-        async def stream_handler(client, update):
-            if isinstance(update, StreamEnded):
-                chat_id = update.chat_id
-                await play_next(chat_id)
     except Exception as e:
         logging.error(f"Failed to import/bind PyTgCalls due to OS limitations: {e}")
         print("\n" + "=" * 50)
@@ -1353,13 +1354,7 @@ async def main():
     print("Starting bot client...")
     await bot.start()
     
-    # Cache bot's dialogs to prevent "Peer id invalid" updates errors
-    try:
-        async for dialog in bot.get_dialogs(limit=50):
-            pass
-        print("Bot dialogs cached successfully.")
-    except Exception as e:
-        logging.warning(f"Failed to cache bot dialogs: {e}")
+
     
     # Set bot commands list
     try:
@@ -1411,6 +1406,13 @@ async def main():
     if 'PyTgCalls' in locals():
         try:
             call_py = PyTgCalls(user)
+            
+            @call_py.on_update()
+            async def stream_handler(client, update):
+                if isinstance(update, StreamEnded):
+                    chat_id = update.chat_id
+                    await play_next(chat_id)
+                    
             print("Starting PyTgCalls service...")
             await call_py.start()
             print("PyTgCalls running successfully!")
