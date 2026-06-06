@@ -1,0 +1,7 @@
+pyrogram
+py-tgcalls
+yt-dlp
+tgcrypto
+ffmpeg-python
+static-ffmpeg
+psutil
