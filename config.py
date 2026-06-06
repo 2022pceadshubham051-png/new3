@@ -17,4 +17,4 @@ OWNER_ID = int(os.getenv("OWNER_ID", "8702369452"))
 SUPPORT_GROUP_ID = int(os.getenv("SUPPORT_GROUP_ID", "-1003740536853"))
 
 # Cookies file path for yt-dlp to bypass YouTube limits
-YTDL_COOKIEFILE = os.getenv("YTDL_COOKIEFILE", "")
+YTDL_COOKIEFILE = os.getenv("YTDL_COOKIEFILE", "cookies.txt")
